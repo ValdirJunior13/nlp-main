@@ -1,0 +1,30 @@
+# Esse Workflow é responsável pela execução dos testes unitários da biblioteca.
+name: Tests with pytest
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/**'
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        python: ["3.10", "3.11"]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout to source branch
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies and prepare environment
+        run: uv sync --extra all
+        env:
+          UV_PYTHON: ${{ matrix.python }}
+
+      - name: Run tests with pytest
+        run: uv run pytest

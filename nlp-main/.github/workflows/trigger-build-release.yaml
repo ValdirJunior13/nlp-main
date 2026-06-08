@@ -1,0 +1,81 @@
+# Workflow de build e release. Cria a release automática no GH
+#   e faz o push para o PyPi.
+name: Build & Release
+
+on: workflow_dispatch
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout to main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Prepare environment
+        id: prepare-environment
+        run: |
+          echo "lib_version=v$(uv version --short --color never)" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$(git describe --tags --abbrev=0)" >> "$GITHUB_OUTPUT"
+
+      - name: Print version and tag
+        run: |
+          echo "lib_version=$LIB_VERSION"
+          echo "latest_tag=$LATEST_TAG"
+        env:
+          LIB_VERSION: ${{ steps.prepare-environment.outputs.lib_version }}
+          LATEST_TAG: ${{ steps.prepare-environment.outputs.latest_tag }}
+
+      - name: Install library
+        run: uv sync --extra all --group dev --python 3.10
+
+      - name: Build with uv
+        if: ${{ steps.prepare-environment.outputs.lib_version != steps.prepare-environment.outputs.latest_tag }}
+        run: uv build
+
+      - name: Generate documentation
+        run: |
+          cp src/aibox/nlp/factory/registry.json docs/source/registry.json
+          uv run sphinx-build docs/source _build
+
+      - name: Deploy docs to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          publish_branch: gh-pages
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: _build/
+          force_orphan: true
+
+      - name: Create and push release tag
+        if: ${{ steps.prepare-environment.outputs.lib_version != steps.prepare-environment.outputs.latest_tag }}
+        run: |
+          git tag "$TAG"
+          git push --tags
+        env:
+          TAG: ${{ steps.prepare-environment.outputs.lib_version }}
+
+      - name: Upload to PyPi
+        if: ${{ steps.prepare-environment.outputs.lib_version != steps.prepare-environment.outputs.latest_tag }}
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Create GH Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ steps.prepare-environment.outputs.lib_version != steps.prepare-environment.outputs.latest_tag }}
+        with:
+          tag_name: ${{ steps.prepare-environment.outputs.lib_version }}
+          target_commitish: "main"
+          generate_release_notes: true
+          make_latest: true
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
