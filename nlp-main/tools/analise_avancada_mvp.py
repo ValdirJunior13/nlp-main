@@ -7,6 +7,9 @@ from sklearn.base import clone
  
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
+
+import nltk
+from nltk.corpus import stopwords
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.tree import DecisionTreeRegressor
@@ -16,17 +19,15 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.feature_extraction.text import TfidfVectorizer
  
-# ==============================================================
-# CONFIGURAÇÃO: escolha qual dataset rodar
-# Opções: "df_11" ou "df_12"
-# ==============================================================
+
+nltk.download('stopwords', quiet=True)
+stop_words_pt = stopwords.words('portuguese')
+
+tfidf_vec = TfidfVectorizer(max_features=1000, stop_words=stop_words_pt)
 DATASET = "df_11"
  
 PASTA = os.path.join(os.path.dirname(__file__), "..", "dataset")
  
-# ==============================================================
-# 1. CARREGANDO OS DATASETS DE TREINO E TESTE SEPARADOS
-# ==============================================================
 print(f"1. Carregando os datasets de treino e teste ({DATASET})...")
  
 df_train = pd.read_csv(os.path.join(PASTA, f"{DATASET}_train.csv"))
@@ -43,9 +44,6 @@ textos_test  = df_test[COL_TEXTO].fillna("").astype(str).tolist()
 y_train = df_train[COL_NOTA].reset_index(drop=True)
 y_test  = df_test[COL_NOTA].reset_index(drop=True)
  
-# ==============================================================
-# 2. GERANDO EMBEDDINGS (Sentence Transformers)
-# ==============================================================
 print("2. Gerando Embeddings (Sentence Transformers)...")
 modelo_ia = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
  
@@ -56,20 +54,14 @@ cols_emb = [f"emb_{i}" for i in range(emb_train.shape[1])]
 df_emb_train = pd.DataFrame(emb_train, columns=cols_emb)
 df_emb_test  = pd.DataFrame(emb_test,  columns=cols_emb)
  
-# ==============================================================
-# 2.5 GERANDO TF-IDF
-# ==============================================================
 print("2.5. Gerando TF-IDF...")
 tfidf_vec = TfidfVectorizer(max_features=1000)
-tfidf_vec.fit(textos_train)  # fit APENAS no treino — sem data leakage
+tfidf_vec.fit(textos_train) 
  
 cols_tfidf = tfidf_vec.get_feature_names_out()
 df_tfidf_train = pd.DataFrame(tfidf_vec.transform(textos_train).toarray(), columns=cols_tfidf)
 df_tfidf_test  = pd.DataFrame(tfidf_vec.transform(textos_test).toarray(),  columns=cols_tfidf)
- 
-# ==============================================================
-# 3. CARREGANDO FEATURES COH-METRIX
-# ==============================================================
+
 print("3. Verificando features Coh-Metrix...")
 
 ficheiro_cohmetrix = os.path.join(os.path.dirname(__file__), "caracteristicas_cohmetrix_BKP.csv")
@@ -79,8 +71,6 @@ if usar_cohmetrix:
     df_coh = pd.read_csv(ficheiro_cohmetrix)
     colunas_drop     = ['resposta_original', 'nota_original']
     colunas_features = [c for c in df_coh.columns if c not in colunas_drop]
-
-    # Remove duplicatas de texto no Coh-Metrix antes do merge
     df_coh_dedup = df_coh.drop_duplicates(subset='resposta_original').reset_index(drop=True)
 
     df_train_coh = df_train.merge(
@@ -111,14 +101,8 @@ if usar_cohmetrix:
     print(f"   Features Coh-Metrix: {len(colunas_features)}")
 else:
     print("   AVISO: Coh-Metrix não encontrado.")
-# ==============================================================
-# 4. DEFININDO OS CENÁRIOS (Ablation Study)
-# ==============================================================
+
 print("4. Preparando cenários de características (Ablation Study)...")
- 
-# Cenários sem Coh-Metrix usam o dataset completo (y_train / y_test)
-# Cenários com Coh-Metrix usam apenas as amostras que fizeram match (y_train_coh / y_test_coh)
- 
 if usar_cohmetrix:
     cenarios = {
         "Apenas TF-IDF": (
@@ -162,9 +146,6 @@ for nome, (Xtr, Xte, *_) in cenarios.items():
     print(f"  - {nome}: {Xtr.shape[1]} features | {len(Xtr)} amostras treino")
 print("-"*55 + "\n")
  
-# ==============================================================
-# 5. MODELOS
-# ==============================================================
 modelos = {
     "Regressão Linear":     LinearRegression(),
     "KNN":                  KNeighborsRegressor(n_neighbors=5),
@@ -175,9 +156,6 @@ modelos = {
     "Rede Neural (MLP)":    MLPRegressor(random_state=42, max_iter=1000),
 }
  
-# ==============================================================
-# 6. TREINAMENTO E AVALIAÇÃO
-# ==============================================================
 print("5. Treinando e avaliando modelos...\n")
  
 resultados_gerais     = []
@@ -226,9 +204,6 @@ for nome_cenario, (X_train_c, X_test_c, y_tr, y_te, df_te) in cenarios.items():
             y_test_melhor_ref     = y_te
             df_test_melhor        = df_te
  
-# ==============================================================
-# 7. RESULTADOS
-# ==============================================================
 print("\n" + "="*55)
 print(f"RESULTADO FINAL — Dataset: {DATASET}")
 print("="*55)
@@ -245,9 +220,6 @@ nome_resultado = f"resultados_{DATASET}.csv"
 df_resultados.to_csv(nome_resultado, index=False)
 print(f"\nResultados salvos em '{nome_resultado}'")
  
-# ==============================================================
-# 8. ANÁLISE DE ERROS DO MELHOR MODELO
-# ==============================================================
 print("\n" + "="*55)
 print(f"ANÁLISE DE ERROS — Vencedor: {nome_melhor_modelo} | {melhor_cenario_global}")
 print("="*55)
@@ -264,9 +236,6 @@ for _, linha in piores.iterrows():
     print(f"\n  PROFESSOR: {linha['Real']} | IA: {linha['Previsto']:.2f} (Erro: {linha['Erro_Absoluto']:.2f})")
     print(f"  RESPOSTA: {linha['Texto']}")
  
-# ==============================================================
-# 9. IMPORTÂNCIA DAS FEATURES
-# ==============================================================
 print("\n" + "="*55)
 print("IMPORTÂNCIA DAS FEATURES (Top 10)")
 print("="*55)
