@@ -78,6 +78,7 @@ namespaces = true
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.3.0",
     "ipython>=8.37.0",
     "pre-commit>=4.0.0",
     "pytest>=8.0.0",
