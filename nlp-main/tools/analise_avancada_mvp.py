@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import os
 from sentence_transformers import SentenceTransformer
 from sklearn.base import clone
- 
+from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
-
+import re
 import nltk
 from nltk.corpus import stopwords
 from sklearn.neighbors import KNeighborsRegressor
@@ -73,12 +73,19 @@ if usar_cohmetrix:
     colunas_features = [c for c in df_coh.columns if c not in colunas_drop]
     df_coh_dedup = df_coh.drop_duplicates(subset='resposta_original').reset_index(drop=True)
 
+    def limpar_para_merge(texto):
+        texto = str(texto).lower() 
+        texto = re.sub(r'\s+', ' ', texto)
+        return texto.strip()
+    df_train['chave_merge'] = df_train['answer_text'].apply(limpar_para_merge)
+    df_test['chave_merge']  = df_test['answer_text'].apply(limpar_para_merge)
+    df_coh_dedup['chave_merge'] = df_coh_dedup['resposta_original'].apply(limpar_para_merge)
     df_train_coh = df_train.merge(
-        df_coh_dedup, left_on='answer_text', right_on='resposta_original', how='inner'
+        df_coh_dedup, on='chave_merge', how='inner'
     ).reset_index(drop=True)
 
     df_test_coh = df_test.merge(
-        df_coh_dedup, left_on='answer_text', right_on='resposta_original', how='inner'
+        df_coh_dedup, on='chave_merge', how='inner'
     ).reset_index(drop=True)
 
     coh_train   = df_train_coh[colunas_features].fillna(0).reset_index(drop=True)
@@ -97,7 +104,7 @@ if usar_cohmetrix:
     df_tfidf_train_coh = pd.DataFrame(tfidf_vec.transform(textos_train_coh).toarray(), columns=cols_tfidf)
     df_tfidf_test_coh  = pd.DataFrame(tfidf_vec.transform(textos_test_coh).toarray(),  columns=cols_tfidf)
 
-    print(f"   Coh-Metrix: {len(coh_train)} treino / {len(coh_test)} teste (após merge pelo texto)")
+    print(f"   Coh-Metrix: {len(coh_train)} treino / {len(coh_test)} teste (após merge corrigido)")
     print(f"   Features Coh-Metrix: {len(colunas_features)}")
 else:
     print("   AVISO: Coh-Metrix não encontrado.")
@@ -175,7 +182,11 @@ for nome_cenario, (X_train_c, X_test_c, y_tr, y_te, df_te) in cenarios.items():
     X_test_c  = X_test_c.reset_index(drop=True)
     y_tr      = y_tr.reset_index(drop=True)
     y_te      = y_te.reset_index(drop=True)
- 
+    scaler = StandardScaler()
+
+    colunas = X_train_c.columns 
+    X_train_c = pd.DataFrame(scaler.fit_transform(X_train_c), columns=colunas)
+    X_test_c = pd.DataFrame(scaler.transform(X_test_c), columns=colunas)
     for nome_modelo, modelo_base in modelos.items():
         modelo = clone(modelo_base)
         modelo.fit(X_train_c, y_tr)
