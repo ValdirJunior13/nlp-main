@@ -1,0 +1,21 @@
+CONCLUSÃO — Efeito do pré-processamento (Nova Versão: Pergunta + Resposta)
+
+==============================================================================
+
+
+df_12 (Split 1 — mesma pergunta) | Entrada: Pergunta + Resposta
+------------------------------------------------------------------------------
+  - KNN: R² foi de 0.5130 (cru) para 0.5284 (processado) — melhorou (Δ=+0.0154). Melhor variante: 'Apenas TF-IDF (stopwords+lemma)'.
+  - SVR: R² foi de 0.5956 (cru) para 0.5737 (processado) — piorou (Δ=-0.0219). Melhor variante: 'Apenas TF-IDF (cru)'.
+  - Regressão Linear: R² foi de 0.5700 (cru) para 0.5791 (processado) — manteve-se estável (Δ=+0.0091). Melhor variante: 'Apenas TF-IDF (stopwords+lemma)'.
+
+df_11 (Split 2 — generalização) | Entrada: Pergunta + Resposta
+------------------------------------------------------------------------------
+  - KNN: R² foi de -1.1758 (cru) para -0.5258 (processado) — melhorou (Δ=+0.6500). Melhor variante: 'Apenas TF-IDF (stopwords+lemma+POS)'.
+  - SVR: R² foi de -0.4983 (cru) para -0.2359 (processado) — melhorou (Δ=+0.2625). Melhor variante: 'Apenas TF-IDF (stopwords+lemma)'.
+  - Regressão Linear: R² foi de -1.2123 (cru) para -0.5059 (processado) — melhorou (Δ=+0.7064). Melhor variante: 'Apenas TF-IDF (stopwords)'.
+
+==============================================================================
+
+Resumo geral da atualização:
+Com a nova abordagem de concatenar Pergunta + Resposta antes da vetorização TF-IDF, observamos como os modelos baseados em distância reagem ao tratamento linguístico. No split 1 (df_12), o pré-processamento ajuda de forma mais consistente. No split 2 (df_11, generalização), o efeito é mais instável, confirmando que a dificuldade de prever notas para perguntas inéditas exige representações semânticas mais densas (como Embeddings gerados ao vivo) além da simples redução de dimensionalidade do TF-IDF.

@@ -1,3 +1,41 @@
+"""
+ASAG - Pipeline Principal (v2: pergunta + resposta como entrada)
+=========================================================================
+
+MUDANÇA em relação à versão anterior (sugestão do orientador, e-mail de
+10/07/2026): antes o modelo só via a resposta do aluno (answer_text). Agora
+concatenamos pergunta + resposta:
+
+    question_answer = question_text + "\\n Resposta: " + answer_text
+
+Isso afeta:
+  - TF-IDF: agora vetoriza question_answer (pré-processado), não answer_text.
+  - Embeddings: agora são gerados AO VIVO em cima de question_answer, porque o
+    cache antigo (caracteristicas_embeddings.csv) foi calculado só sobre
+    answer_text e não serve mais aqui. Isso é rápido (segundos), diferente do
+    Coh-Metrix.
+
+O que NÃO muda:
+  - Coh-Metrix continua vindo do cache (cohmetrix_{dataset}_{split}.csv), que
+    foi extraído em cima de answer_text isolado. Recalcular isso levaria ~4
+    dias de novo, então mantemos como está. ISSO É UMA LIMITAÇÃO A DISCUTIR
+    COM O ORIENTADOR: as features de Coh-Metrix avaliam só a resposta, mas
+    TF-IDF/Embeddings agora avaliam pergunta+resposta. Se ele quiser Coh-Metrix
+    também com pergunta+resposta, vai precisar rodar a extração de novo
+    (mesmo custo de tempo de antes).
+
+------------------------------------------------------------------------------
+INSTALAÇÃO
+------------------------------------------------------------------------------
+pip install numpy pandas scikit-learn nltk spacy xgboost sentence-transformers
+python -m spacy download pt_core_news_lg
+
+------------------------------------------------------------------------------
+COMO RODAR
+------------------------------------------------------------------------------
+python analise_asag_mvp.py
+"""
+
 import os
 import re
 import warnings
@@ -8,6 +46,7 @@ import pandas as pd
 import nltk
 from nltk.corpus import stopwords
 import spacy
+from sentence_transformers import SentenceTransformer
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.base import clone
@@ -33,13 +72,17 @@ pd.set_option('display.max_rows', None)
 DIRETORIO_ATUAL = os.path.dirname(os.path.abspath(__file__))
 DIRETORIO_RAIZ = os.path.abspath(os.path.join(DIRETORIO_ATUAL, ".."))
 PASTA_DATASET = os.path.join(DIRETORIO_RAIZ, "dataset")
-CAMINHO_EMBEDDINGS = os.path.join(DIRETORIO_ATUAL, "caracteristicas_embeddings.csv")
 
 LISTA_DE_DATASETS = ["df_11", "df_12"]
 MODELO_SPACY = "pt_core_news_lg"
+MODELO_EMBEDDINGS = "paraphrase-multilingual-MiniLM-L12-v2"
 
 POS_RELEVANTES = {"NOUN", "VERB", "ADJ", "ADV"}
 
+
+# ------------------------------------------------------------------
+# 1. Recursos
+# ------------------------------------------------------------------
 def carregar_recursos():
     print("Baixando lista de stopwords (nltk)...")
     nltk.download('stopwords', quiet=True)
@@ -47,37 +90,44 @@ def carregar_recursos():
 
     print(f"Carregando modelo spaCy '{MODELO_SPACY}' para lematização/POS...")
     nlp_pt = spacy.load(MODELO_SPACY, disable=["ner", "parser"])
-    print("Modelo spaCy pronto para uso!")
 
-    if not os.path.exists(CAMINHO_EMBEDDINGS):
-        raise FileNotFoundError(
-            f"Não encontrei '{CAMINHO_EMBEDDINGS}'. Verifique se ele está na pasta raiz do projeto."
-        )
+    print(f"Carregando modelo de embeddings '{MODELO_EMBEDDINGS}'...")
+    modelo_ia = SentenceTransformer(MODELO_EMBEDDINGS)
 
-    df_emb_completo = pd.read_csv(CAMINHO_EMBEDDINGS)
-    colunas_emb = [c for c in df_emb_completo.columns
-                   if c not in ("resposta_original", "nota_original")]
-    print(f"Embeddings carregados: {len(df_emb_completo)} respostas, "
-          f"{len(colunas_emb)} dimensões.")
-
-    df_emb_completo['chave_merge'] = df_emb_completo['resposta_original'].apply(limpar_para_merge)
-    df_emb_dedup = df_emb_completo.drop_duplicates(subset='chave_merge')
-
-    return stop_words_pt, nlp_pt, df_emb_dedup, colunas_emb
+    print("Recursos prontos!")
+    return stop_words_pt, nlp_pt, modelo_ia
 
 
 def limpar_para_merge(texto):
     return re.sub(r'\s+', ' ', str(texto).lower()).strip()
 
+
+# ------------------------------------------------------------------
+# 2. Construção do texto combinado (pergunta + resposta)
+# ------------------------------------------------------------------
+def construir_texto_combinado(df):
+    """
+    Cria a coluna 'question_answer' = pergunta + resposta, conforme sugestão
+    do orientador. Exige que o DataFrame tenha 'question_text' e 'answer_text'.
+    """
+    if "question_text" not in df.columns:
+        raise KeyError(
+            "Coluna 'question_text' não encontrada. Confira se o CSV de origem "
+            "tem essa coluna (df_11_train.csv/df_12_train.csv já têm por padrão)."
+        )
+    df = df.copy()
+    df["question_answer"] = (
+        df["question_text"].fillna("").astype(str)
+        + "\n Resposta: "
+        + df["answer_text"].fillna("").astype(str)
+    )
+    return df
+
+
+# ------------------------------------------------------------------
+# 3. Pré-processamento linguístico (só para TF-IDF)
+# ------------------------------------------------------------------
 def gerar_variantes_preprocessamento(textos, nlp_pt, stop_words_pt, batch_size=64, n_process=1):
-    """
-    Gera 4 variantes de texto a partir da lista `textos`:
-      - cru:                  sem nenhum tratamento (além de manter só letras)
-      - stopwords:             remove stopwords
-      - stopwords_lemma:       remove stopwords + lematiza
-      - stopwords_lemma_pos:   remove stopwords + lematiza + filtra classe gramatical
-                                (mantém só NOUN, VERB, ADJ, ADV)
-    """
     textos = [str(t) if pd.notna(t) else "" for t in textos]
 
     saida = {
@@ -113,14 +163,20 @@ def gerar_variantes_preprocessamento(textos, nlp_pt, stop_words_pt, batch_size=6
 
     return saida
 
-def carregar_e_juntar(nome_dataset, split, df_emb_dedup, colunas_emb, pasta=PASTA_DATASET):
+
+# ------------------------------------------------------------------
+# 4. Carregamento + merge por dataset/split
+# ------------------------------------------------------------------
+def carregar_e_juntar(nome_dataset, split, pasta=PASTA_DATASET):
     caminho = os.path.join(pasta, f"{nome_dataset}_{split}.csv")
     if not os.path.exists(caminho):
         raise FileNotFoundError(f"Não encontrei {caminho}")
 
     df = pd.read_csv(caminho)
+    df = construir_texto_combinado(df)
     df['chave_merge'] = df['answer_text'].apply(limpar_para_merge)
 
+    # --- Coh-Metrix (baseado em answer_text isolado - ver aviso no topo do arquivo) ---
     caminho_coh = os.path.join(pasta, f"cohmetrix_{nome_dataset}_{split}.csv")
     coh_features = None
     if os.path.exists(caminho_coh):
@@ -129,42 +185,46 @@ def carregar_e_juntar(nome_dataset, split, df_emb_dedup, colunas_emb, pasta=PAST
         coh_dedup = coh_raw.drop_duplicates(subset='chave_merge')
 
         df_coh = df.merge(coh_dedup, on='chave_merge', how='left')
-        colunas_remover = ['resposta_original', 'nota_original', 'answer_text', 'grade', 'chave_merge']
+        colunas_remover = [
+            'resposta_original', 'nota_original', 'answer_text', 'grade',
+            'chave_merge', 'question_text', 'question_answer', 'id', 'question_id',
+        ]
         colunas_features = [c for c in coh_dedup.columns if c not in colunas_remover]
         coh_features = df_coh[colunas_features].fillna(0)
         coh_features.index = df.index
 
-    df_emb_merged = df.merge(df_emb_dedup, on='chave_merge', how='left')
-    n_sem_embedding = df_emb_merged[colunas_emb[0]].isna().sum()
-    if n_sem_embedding > 0:
-        print(f"    AVISO [{nome_dataset}_{split}]: {n_sem_embedding} de {len(df)} "
-              f"respostas não encontraram embedding correspondente (preenchidas com 0).")
-    emb_features = df_emb_merged[colunas_emb].fillna(0)
-    emb_features.index = df.index
-
-    return df, coh_features, emb_features
+    return df, coh_features
 
 
-def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, df_emb_dedup, colunas_emb):
+# ------------------------------------------------------------------
+# 5. Pipeline principal por dataset
+# ------------------------------------------------------------------
+def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, modelo_ia):
     print("\n" + "=" * 70)
-    print(f"INICIANDO PIPELINE PARA: {nome_dataset}")
+    print(f"INICIANDO PIPELINE PARA: {nome_dataset} (texto = pergunta + resposta)")
     print("=" * 70)
 
-    df_train, coh_train, df_emb_train = carregar_e_juntar(
-        nome_dataset, "train", df_emb_dedup, colunas_emb)
-    df_test, coh_test, df_emb_test = carregar_e_juntar(
-        nome_dataset, "test", df_emb_dedup, colunas_emb)
+    df_train, coh_train = carregar_e_juntar(nome_dataset, "train")
+    df_test, coh_test = carregar_e_juntar(nome_dataset, "test")
 
     usar_cohmetrix = coh_train is not None and coh_test is not None
     if not usar_cohmetrix:
         print(" -> AVISO: Coh-Metrix não encontrado para este dataset. Rodando sem essas features.")
 
-    textos_train = df_train["answer_text"].fillna("").astype(str).tolist()
-    textos_test = df_test["answer_text"].fillna("").astype(str).tolist()
+    textos_train = df_train["question_answer"].tolist()
+    textos_test = df_test["question_answer"].tolist()
     y_train = df_train["grade"]
     y_test = df_test["grade"]
 
-    # ---------- Variantes de pré-processamento para TF-IDF ----------
+    # ---------- Embeddings AO VIVO (pergunta + resposta) ----------
+    print(" -> Gerando embeddings (pergunta + resposta) — ao vivo, não usa mais o cache antigo...")
+    emb_train = modelo_ia.encode(textos_train, show_progress_bar=False)
+    emb_test = modelo_ia.encode(textos_test, show_progress_bar=False)
+    cols_emb = [f"emb_{i}" for i in range(emb_train.shape[1])]
+    df_emb_train = pd.DataFrame(emb_train, columns=cols_emb)
+    df_emb_test = pd.DataFrame(emb_test, columns=cols_emb)
+
+    # ---------- Variantes de pré-processamento para TF-IDF (pergunta + resposta) ----------
     print(" -> Gerando variantes de pré-processamento (stopwords / lemma / POS)...")
     variantes_train = gerar_variantes_preprocessamento(textos_train, nlp_pt, stop_words_pt)
     variantes_test = gerar_variantes_preprocessamento(textos_test, nlp_pt, stop_words_pt)
@@ -280,6 +340,10 @@ def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, df_emb_dedup,
 
     return df_resultados, dados_melhor_modelo
 
+
+# ------------------------------------------------------------------
+# 6. Tabela de ablação
+# ------------------------------------------------------------------
 def tabela_ablacao_tfidf(df_resultados):
     variantes_ordem = [
         "Apenas TF-IDF (cru)",
@@ -292,8 +356,12 @@ def tabela_ablacao_tfidf(df_resultados):
     tabela = df_abl.pivot_table(index="Modelo", columns="Cenário", values=["MAE", "RMSE", "R²"])
     return tabela.round(4)
 
+
+# ------------------------------------------------------------------
+# 7. Execução
+# ------------------------------------------------------------------
 def main():
-    stop_words_pt, nlp_pt, df_emb_dedup, colunas_emb = carregar_recursos()
+    stop_words_pt, nlp_pt, modelo_ia = carregar_recursos()
 
     todas_as_tabelas = []
     melhores_modelos = {}
@@ -303,7 +371,7 @@ def main():
     for dataset in LISTA_DE_DATASETS:
         try:
             tabela_resultado, melhor_modelo = executar_experimento_asag(
-                dataset, nlp_pt, stop_words_pt, df_emb_dedup, colunas_emb)
+                dataset, nlp_pt, stop_words_pt, modelo_ia)
 
             if tabela_resultado is not None and not tabela_resultado.empty:
                 todas_as_tabelas.append(tabela_resultado)
@@ -324,7 +392,7 @@ def main():
         print("RANKING GERAL DE TODOS OS EXPERIMENTOS (Top 20)")
         print("=" * 70)
         print(relatorio_final.sort_values(by="R²", ascending=False).head(20).round(4).to_string(index=False))
-        
+
         caminho_relatorio = os.path.join(DIRETORIO_ATUAL, "relatorio_geral_experimentos_asag.csv")
         relatorio_final.to_csv(caminho_relatorio, index=False)
         print(f"Relatório geral salvo em '{caminho_relatorio}'")
