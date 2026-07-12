@@ -75,7 +75,7 @@ PASTA_DATASET = os.path.join(DIRETORIO_RAIZ, "dataset")
 
 LISTA_DE_DATASETS = ["df_11", "df_12"]
 MODELO_SPACY = "pt_core_news_lg"
-MODELO_EMBEDDINGS = "paraphrase-multilingual-MiniLM-L12-v2"
+MODELO_EMBEDDINGS = "neuralmind/bert-base-portuguese-cased"
 
 POS_RELEVANTES = {"NOUN", "VERB", "ADJ", "ADV"}
 
@@ -346,7 +346,7 @@ def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, modelo_ia):
                 }
 
     df_resultados = pd.DataFrame(resultados).sort_values(by="R²", ascending=False).reset_index(drop=True)
-    df_resultados.to_csv(os.path.join(DIRETORIO_ATUAL, f"resultados_{nome_dataset}.csv"), index=False)
+    df_resultados.to_csv(os.path.join(DIRETORIO_ATUAL, f"resultados_{nome_dataset}_bertimbau.csv"), index=False)
 
     print(f"\nConcluído! Resultados oficiais para {nome_dataset}:")
     print(df_resultados.head(10).round(4).to_string(index=False))
@@ -409,7 +409,7 @@ def main():
         print("=" * 70)
         print(relatorio_final.sort_values(by="R²", ascending=False).head(20).round(4).to_string(index=False))
 
-        caminho_relatorio = os.path.join(DIRETORIO_ATUAL, "relatorio_geral_experimentos_asag.csv")
+        caminho_relatorio = os.path.join(DIRETORIO_ATUAL, "relatorio_geral_experimentos_asag_bertimbau.csv")
         relatorio_final.to_csv(caminho_relatorio, index=False)
         print(f"Relatório geral salvo em '{caminho_relatorio}'")
     else:

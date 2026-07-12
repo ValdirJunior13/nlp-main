@@ -46,8 +46,8 @@ PASTA_DATASET = os.path.join(DIRETORIO_RAIZ, "dataset")
 
 LISTA_DE_DATASETS = ["df_11", "df_12"]
 MODELO_SPACY = "pt_core_news_lg"
-MODELO_EMBEDDINGS = "paraphrase-multilingual-MiniLM-L12-v2"
-NOME_ARQUIVO_SAIDA = os.path.join(DIRETORIO_ATUAL, "relatorio_geral_experimentos_pesquisa_semelhante.csv")
+MODELO_EMBEDDINGS = "neuralmind/bert-base-portuguese-cased"
+NOME_ARQUIVO_SAIDA = os.path.join(DIRETORIO_ATUAL, "relatorio_geral_experimentos_pesquisa_semelhante_bertimbau.csv")
 
 POS_RELEVANTES = {"NOUN", "VERB", "ADJ", "ADV"}
 
