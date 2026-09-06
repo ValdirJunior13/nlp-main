@@ -1,18 +1,3 @@
-"""
-ASAG - Estilo Artigo (v2: pergunta + resposta como entrada)
-=========================================================================
-
-Mesma mudança do analise_asag_mvp.py (v2): TF-IDF e Embeddings agora usam
-question_answer = question_text + "\\n Resposta: " + answer_text, em vez de
-só answer_text. Coh-Metrix continua vindo do cache (baseado em answer_text
-isolado) — ver aviso detalhado no topo do analise_asag_mvp.py.
-
-------------------------------------------------------------------------------
-COMO RODAR
-------------------------------------------------------------------------------
-python analise_semelhante_mvp.py
-"""
-
 import os
 import re
 import warnings
@@ -186,10 +171,6 @@ def executar_experimento_pesquisa_semelhante(nome_dataset, nlp_pt, stop_words_pt
         modelos["XGB"] = XGBRegressor(random_state=42)
     else:
         print(" -> AVISO: XGBoost indisponível, essa linha ficará faltando (assim como no artigo).")
-
-    # Modelos baseados em árvore não precisam de StandardScaler (pedido do orientador,
-    # e-mail de 10/07/2026): RF, DT e XGB (gradient boosting) particionam o espaço por
-    # limiares em cada variável isoladamente, então normalizar não muda o resultado.
     MODELOS_SEM_ESCALA = {"RF", "DT", "XGB"}
 
     resultados = []

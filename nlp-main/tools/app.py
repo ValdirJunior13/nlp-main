@@ -1,33 +1,3 @@
-"""
-ASAG - App Streamlit (Dashboard + Pipelines de Treino)
-=========================================================================
-
-Reúne, numa interface única, tudo que você já tinha em notebooks separados —
-EXCETO a extração de Coh-Metrix (que leva ~4 dias e continua sendo feita
-separadamente pelo extracao_asag_tcc.ipynb).
-
-Abas:
-  1. Dashboard          -> explora os CSVs de resultados que você já gerou
-  2. Rodar Treino        -> roda a ablação de pré-processamento + combinações
-                            (equivalente ao analise_asag_mvp.ipynb), ao vivo
-  3. Estilo Artigo        -> roda as representações isoladas
-                            (equivalente ao analise_semelhante_mvp.ipynb), ao vivo
-  4. Modelos de Distância -> KNN / SVR / Regressão Linear, com conclusão automática
-
-------------------------------------------------------------------------------
-INSTALAÇÃO
-------------------------------------------------------------------------------
-pip install streamlit pandas numpy scikit-learn nltk spacy xgboost matplotlib --break-system-packages
-python -m spacy download pt_core_news_lg
-
-------------------------------------------------------------------------------
-COMO RODAR
-------------------------------------------------------------------------------
-streamlit run app.py
-
-Rode a partir da pasta "tools" (mesma onde estão os outros scripts/notebooks),
-para que os caminhos padrão (../dataset, caracteristicas_embeddings.csv) funcionem.
-"""
 
 import os
 import re
@@ -43,10 +13,6 @@ import streamlit as st
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="ASAG - Painel do TCC", layout="wide")
-
-# ------------------------------------------------------------------
-# CONSTANTES
-# ------------------------------------------------------------------
 POS_RELEVANTES = {"NOUN", "VERB", "ADJ", "ADV"}
 MODELOS_DISTANCIA = ["KNN", "SVR", "Regressão Linear"]
 LISTA_DE_DATASETS = ["df_11", "df_12"]
@@ -80,10 +46,6 @@ ARTIGO_SPLIT2 = {
 def limpar_para_merge(texto):
     return re.sub(r"\s+", " ", str(texto).lower()).strip()
 
-
-# ------------------------------------------------------------------
-# RECURSOS PESADOS (cacheados: só carregam uma vez por sessão)
-# ------------------------------------------------------------------
 @st.cache_resource(show_spinner="Carregando spaCy (pt_core_news_lg)...")
 def carregar_spacy():
     import spacy
@@ -174,10 +136,6 @@ def carregar_e_juntar(nome_dataset, split, pasta_dataset, df_emb_dedup, colunas_
 
     return df, coh_features, emb_features
 
-
-# ------------------------------------------------------------------
-# ABA 1 — DASHBOARD
-# ------------------------------------------------------------------
 def aba_dashboard():
     st.header("📊 Dashboard de Resultados")
     st.caption("Explore os CSVs já gerados pelos outros notebooks/scripts.")
@@ -276,10 +234,6 @@ def aba_dashboard():
     else:
         st.info("Envie ou coloque na pasta atual o arquivo 'relatorio_geral_experimentos_pesquisa_semelhante.csv' para ver a comparação com o artigo.")
 
-
-# ------------------------------------------------------------------
-# ABA 2 — RODAR TREINO (ablação + combinações)
-# ------------------------------------------------------------------
 def executar_experimento_asag(nome_dataset, pasta_dataset, nlp_pt, stop_words_pt, df_emb_dedup, colunas_emb):
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.base import clone
@@ -413,10 +367,6 @@ def aba_rodar_treino():
         st.download_button("⬇️ Baixar relatorio_geral_experimentos_asag.csv",
                             relatorio_final.to_csv(index=False), file_name="relatorio_geral_experimentos_asag.csv")
 
-
-# ------------------------------------------------------------------
-# ABA 3 — ESTILO ARTIGO (representações isoladas)
-# ------------------------------------------------------------------
 def executar_pesquisa_semelhante(nome_dataset, pasta_dataset, nlp_pt, stop_words_pt, df_emb_dedup, colunas_emb):
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.base import clone
@@ -517,9 +467,6 @@ def aba_estilo_artigo():
                             file_name="relatorio_geral_experimentos_pesquisa_semelhante.csv")
 
 
-# ------------------------------------------------------------------
-# ABA 4 — MODELOS DE DISTÂNCIA
-# ------------------------------------------------------------------
 def aba_modelos_distancia():
     st.header("📏 Modelos Baseados em Distância (KNN, SVR, Regressão Linear)")
     st.caption("Usa os resultados da aba 'Rodar Treino' (se já rodou nesta sessão) ou arquivos enviados abaixo.")
@@ -584,9 +531,6 @@ def aba_modelos_distancia():
             st.write(f"- {modelo}: R² {r2_cru.iloc[0]:.4f} → {r2_final.iloc[0]:.4f} ({direcao}, Δ={delta:+.4f})")
 
 
-# ------------------------------------------------------------------
-# MAIN
-# ------------------------------------------------------------------
 def main():
     st.title("📚 ASAG — Painel do TCC")
     st.caption("Automatic Short Answer Grading — dashboard e pipelines de treino (sem a extração Coh-Metrix, que continua sendo feita separadamente).")

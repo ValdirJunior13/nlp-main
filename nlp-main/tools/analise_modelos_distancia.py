@@ -17,7 +17,6 @@ VARIANTES_ORDEM = [
 ]
 VARIANTES_ROTULO_CURTO = ["Cru", "Stopwords", "Stopwords+Lemma", "Stopwords+Lemma+POS"]
 
-# ATUALIZAÇÃO: Deixando explícito o uso de Pergunta + Resposta nos títulos
 ROTULO_SPLIT = {
     "df_11": "df_11 (Split 2 — generalização) | Entrada: Pergunta + Resposta",
     "df_12": "df_12 (Split 1 — mesma pergunta) | Entrada: Pergunta + Resposta",
@@ -60,7 +59,6 @@ def gerar_grafico(df_11, df_12, caminho_saida):
     axes[0].set_ylabel("R² (maior é melhor)")
     axes[0].legend(fontsize=9)
     
-    # ATUALIZAÇÃO: Título geral do gráfico com a metodologia do professor
     plt.suptitle("Efeito do pré-processamento em modelos de distância (Contexto: Pergunta + Resposta)", 
                  fontsize=14, fontweight='bold')
     plt.tight_layout()

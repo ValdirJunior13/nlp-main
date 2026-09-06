@@ -1,41 +1,3 @@
-"""
-ASAG - Pipeline Principal (v2: pergunta + resposta como entrada)
-=========================================================================
-
-MUDANÇA em relação à versão anterior (sugestão do orientador, e-mail de
-10/07/2026): antes o modelo só via a resposta do aluno (answer_text). Agora
-concatenamos pergunta + resposta:
-
-    question_answer = question_text + "\\n Resposta: " + answer_text
-
-Isso afeta:
-  - TF-IDF: agora vetoriza question_answer (pré-processado), não answer_text.
-  - Embeddings: agora são gerados AO VIVO em cima de question_answer, porque o
-    cache antigo (caracteristicas_embeddings.csv) foi calculado só sobre
-    answer_text e não serve mais aqui. Isso é rápido (segundos), diferente do
-    Coh-Metrix.
-
-O que NÃO muda:
-  - Coh-Metrix continua vindo do cache (cohmetrix_{dataset}_{split}.csv), que
-    foi extraído em cima de answer_text isolado. Recalcular isso levaria ~4
-    dias de novo, então mantemos como está. ISSO É UMA LIMITAÇÃO A DISCUTIR
-    COM O ORIENTADOR: as features de Coh-Metrix avaliam só a resposta, mas
-    TF-IDF/Embeddings agora avaliam pergunta+resposta. Se ele quiser Coh-Metrix
-    também com pergunta+resposta, vai precisar rodar a extração de novo
-    (mesmo custo de tempo de antes).
-
-------------------------------------------------------------------------------
-INSTALAÇÃO
-------------------------------------------------------------------------------
-pip install numpy pandas scikit-learn nltk spacy xgboost sentence-transformers
-python -m spacy download pt_core_news_lg
-
-------------------------------------------------------------------------------
-COMO RODAR
-------------------------------------------------------------------------------
-python analise_asag_mvp.py
-"""
-
 import os
 import re
 import warnings
@@ -79,10 +41,6 @@ MODELO_EMBEDDINGS = "paraphrase-multilingual-MiniLM-L12-v2"
 
 POS_RELEVANTES = {"NOUN", "VERB", "ADJ", "ADV"}
 
-
-# ------------------------------------------------------------------
-# 1. Recursos
-# ------------------------------------------------------------------
 def carregar_recursos():
     print("Baixando lista de stopwords (nltk)...")
     nltk.download('stopwords', quiet=True)
@@ -101,15 +59,8 @@ def carregar_recursos():
 def limpar_para_merge(texto):
     return re.sub(r'\s+', ' ', str(texto).lower()).strip()
 
-
-# ------------------------------------------------------------------
-# 2. Construção do texto combinado (pergunta + resposta)
-# ------------------------------------------------------------------
 def construir_texto_combinado(df):
-    """
-    Cria a coluna 'question_answer' = pergunta + resposta, conforme sugestão
-    do orientador. Exige que o DataFrame tenha 'question_text' e 'answer_text'.
-    """
+
     if "question_text" not in df.columns:
         raise KeyError(
             "Coluna 'question_text' não encontrada. Confira se o CSV de origem "
@@ -123,10 +74,6 @@ def construir_texto_combinado(df):
     )
     return df
 
-
-# ------------------------------------------------------------------
-# 3. Pré-processamento linguístico (só para TF-IDF)
-# ------------------------------------------------------------------
 def gerar_variantes_preprocessamento(textos, nlp_pt, stop_words_pt, batch_size=64, n_process=1):
     textos = [str(t) if pd.notna(t) else "" for t in textos]
 
@@ -163,10 +110,6 @@ def gerar_variantes_preprocessamento(textos, nlp_pt, stop_words_pt, batch_size=6
 
     return saida
 
-
-# ------------------------------------------------------------------
-# 4. Carregamento + merge por dataset/split
-# ------------------------------------------------------------------
 def carregar_e_juntar(nome_dataset, split, pasta=PASTA_DATASET):
     caminho = os.path.join(pasta, f"{nome_dataset}_{split}.csv")
     if not os.path.exists(caminho):
@@ -176,7 +119,6 @@ def carregar_e_juntar(nome_dataset, split, pasta=PASTA_DATASET):
     df = construir_texto_combinado(df)
     df['chave_merge'] = df['answer_text'].apply(limpar_para_merge)
 
-    # --- Coh-Metrix (baseado em answer_text isolado - ver aviso no topo do arquivo) ---
     caminho_coh = os.path.join(pasta, f"cohmetrix_{nome_dataset}_{split}.csv")
     coh_features = None
     if os.path.exists(caminho_coh):
@@ -195,10 +137,6 @@ def carregar_e_juntar(nome_dataset, split, pasta=PASTA_DATASET):
 
     return df, coh_features
 
-
-# ------------------------------------------------------------------
-# 5. Pipeline principal por dataset
-# ------------------------------------------------------------------
 def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, modelo_ia):
     print("\n" + "=" * 70)
     print(f"INICIANDO PIPELINE PARA: {nome_dataset} (texto = pergunta + resposta)")
@@ -294,10 +232,6 @@ def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, modelo_ia):
     if TEM_XGBOOST:
         modelos["XGBoost"] = XGBRegressor(random_state=42)
 
-    # Modelos baseados em árvore não precisam de StandardScaler (pedido do orientador,
-    # e-mail de 10/07/2026): eles particionam o espaço por limiares em cada variável
-    # isoladamente, então normalizar não muda o resultado, só adiciona uma etapa à toa.
-    # XGBoost entra no mesmo grupo por também ser baseado em árvores (gradient boosting).
     MODELOS_SEM_ESCALA = {"Árvore de Decisão", "Random Forest", "HistGradientBoosting", "XGBoost"}
 
     resultados = []
@@ -357,9 +291,6 @@ def executar_experimento_asag(nome_dataset, nlp_pt, stop_words_pt, modelo_ia):
     return df_resultados, dados_melhor_modelo
 
 
-# ------------------------------------------------------------------
-# 6. Tabela de ablação
-# ------------------------------------------------------------------
 def tabela_ablacao_tfidf(df_resultados):
     variantes_ordem = [
         "Apenas TF-IDF (cru)",
@@ -373,9 +304,6 @@ def tabela_ablacao_tfidf(df_resultados):
     return tabela.round(4)
 
 
-# ------------------------------------------------------------------
-# 7. Execução
-# ------------------------------------------------------------------
 def main():
     stop_words_pt, nlp_pt, modelo_ia = carregar_recursos()
 
